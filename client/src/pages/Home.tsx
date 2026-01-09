@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, AlertCircle, Server, Code, Zap, Shield, Database, ExternalLink, Github, Terminal, Info, Copy } from "lucide-react";
+import { CheckCircle2, AlertCircle, Server, Code, Zap, Shield, Database, ExternalLink, Github, Terminal, Info, Copy, Sun, Moon } from "lucide-react";
 import { ConfigDialog } from "@/components/ConfigDialog";
 
 interface SystemSnapshot {
@@ -49,6 +49,22 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState("overview");
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("theme") as "light" | "dark") || "light";
+    }
+    return "light";
+  });
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   const fetchStatus = async () => {
     try {
@@ -121,11 +137,23 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <Button
               variant="outline"
+              size="icon"
+              className="rounded-full w-9 h-9"
+              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            >
+              {theme === "light" ? (
+                <Moon className="w-4 h-4 text-nordic-slate" />
+              ) : (
+                <Sun className="w-4 h-4 text-amber-400" />
+              )}
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               className="gap-2 font-semibold"
               onClick={() => window.open("https://github.com/mcpmessenger/google-workspace-mcp-server", "_blank")}
             >
-              <Github className="w-4 h-4 text-[#24292e]" />
+              <Github className="w-4 h-4 text-[#24292e] dark:text-white" />
               GitHub
             </Button>
             <ConfigDialog />
