@@ -39,9 +39,9 @@ export default function Home() {
   });
 
   const [services, setServices] = useState<ServiceStatus[]>([
-    { name: "Google Drive", enabled: true, status: "active", lastActivity: "Syncing..." },
-    { name: "Gmail", enabled: true, status: "active", lastActivity: "Syncing..." },
-    { name: "Google Calendar", enabled: true, status: "active", lastActivity: "Syncing..." },
+    { name: "Google Drive", enabled: true, status: "active", lastActivity: "Ready" },
+    { name: "Gmail", enabled: true, status: "active", lastActivity: "Ready" },
+    { name: "Google Calendar", enabled: true, status: "active", lastActivity: "Ready" },
     { name: "Google Docs", enabled: true, status: "active", lastActivity: "Ready" },
     { name: "Google Sheets", enabled: true, status: "active", lastActivity: "Ready" },
     { name: "Google Slides", enabled: true, status: "active", lastActivity: "Ready" },
