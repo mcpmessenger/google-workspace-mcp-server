@@ -28,7 +28,7 @@ interface ServiceStatus {
   lastActivity?: string;
 }
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:8081";
+const BACKEND_URL = import.meta.env.VITE_API_URL || "https://google-workspace-mcp-server-554655392699.us-central1.run.app";
 
 export default function Home() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
