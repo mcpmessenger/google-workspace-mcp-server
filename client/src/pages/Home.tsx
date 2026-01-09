@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, AlertCircle, Server, Code, Zap, Shield, Database, ExternalLink } from "lucide-react";
+import { CheckCircle2, AlertCircle, Server, Code, Zap, Shield, Database, ExternalLink, Github, Terminal, Info, Copy } from "lucide-react";
 import { ConfigDialog } from "@/components/ConfigDialog";
 
 interface SystemSnapshot {
@@ -125,8 +125,8 @@ export default function Home() {
               className="gap-2 font-semibold"
               onClick={() => window.open("https://github.com/mcpmessenger/google-workspace-mcp-server", "_blank")}
             >
-              <ExternalLink className="w-4 h-4" />
-              Docs
+              <Github className="w-4 h-4 text-[#24292e]" />
+              GitHub
             </Button>
             <ConfigDialog />
           </div>
@@ -164,7 +164,7 @@ export default function Home() {
         {/* Main Content Sections */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
           <TabsList className="bg-muted/30 p-1 rounded-xl glass">
-            {["Overview", "Services", "Configuration", "Deployment"].map((tab) => (
+            {["Overview", "Usage", "Services", "Configuration", "Deployment"].map((tab) => (
               <TabsTrigger
                 key={tab.toLowerCase()}
                 value={tab.toLowerCase()}
@@ -217,6 +217,72 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="usage" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <Card className="nordic-card rounded-2xl overflow-hidden">
+                <CardHeader className="bg-muted/30 pb-6 border-b border-border">
+                  <CardTitle className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-emerald-500" />
+                    How to Use
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-8 space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex gap-4">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</div>
+                      <p className="text-sm font-medium leading-relaxed italic opacity-80 decoration-emerald-500/30 underline-offset-4 underline">Open your MCP client (e.g., Claude Desktop, Cursor).</p>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</div>
+                      <p className="text-sm font-medium leading-relaxed italic opacity-80 decoration-emerald-500/30 underline-offset-4 underline">Add the following JSON configuration to your settings file.</p>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">3</div>
+                      <p className="text-sm font-medium leading-relaxed italic opacity-80 decoration-emerald-500/30 underline-offset-4 underline">The server uses **Streamable HTTP**, so you connect to it via its URL.</p>
+                    </div>
+                  </div>
+
+                  <Alert className="bg-primary/5 border-primary/10 rounded-xl">
+                    <Info className="h-4 w-4" />
+                    <AlertDescription className="text-xs font-semibold">
+                      Ensure you have implemented the MCP Streamable HTTP transport on your client side.
+                    </AlertDescription>
+                  </Alert>
+                </CardContent>
+              </Card>
+
+              <Card className="nordic-card rounded-2xl overflow-hidden">
+                <CardHeader className="bg-muted/30 pb-6 border-b border-border flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm font-bold uppercase tracking-widest">Connection Config</CardTitle>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigator.clipboard.writeText(JSON.stringify({
+                    mcpServers: {
+                      workspace: {
+                        url: BACKEND_URL,
+                        transport: "http"
+                      }
+                    }
+                  }, null, 2))}>
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="bg-slate-900 text-slate-200 p-8 font-mono text-xs overflow-x-auto h-[250px]">
+                    <pre className="leading-relaxed">
+                      {`{
+  "mcpServers": {
+    "workspace": {
+      "url": "${BACKEND_URL}",
+      "transport": "http"
+    }
+  }
+}`}
+                    </pre>
+                  </div>
                 </CardContent>
               </Card>
             </div>
