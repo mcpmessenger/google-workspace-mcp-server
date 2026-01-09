@@ -44,39 +44,44 @@
 
 :root {
   /* Vintage Postcard Palette */
-  --vintage-cream: 45 30% 94%; /* #fdf6e3ish */
-  --vintage-burnt-orange: 14 55% 48%; /* #bf5737 */
-  --vintage-sage: 75 25% 48%; /* #8a9a5b */
-  --vintage-navy: 216 49% 33%; /* #2a4b7c */
+  --vintage-cream: 45 30% 94%;
+  /* #fdf6e3ish */
+  --vintage-burnt-orange: 14 55% 48%;
+  /* #bf5737 */
+  --vintage-sage: 75 25% 48%;
+  /* #8a9a5b */
+  --vintage-navy: 216 49% 33%;
+  /* #2a4b7c */
   --vintage-sepia-text: 30 15% 20%;
-  
+
   --primary: hsl(var(--vintage-burnt-orange));
   --primary-foreground: hsl(var(--vintage-cream));
   --sidebar-primary: hsl(var(--vintage-navy));
   --sidebar-primary-foreground: hsl(var(--vintage-cream));
-  
-  --radius: 0px; /* Sharp corners for a more vintage/postcard feel */
+
+  --radius: 0px;
+  /* Sharp corners for a more vintage/postcard feel */
   --background: hsl(var(--vintage-cream));
   --foreground: hsl(var(--vintage-sepia-text));
-  
+
   --card: hsl(var(--vintage-cream));
   --card-foreground: hsl(var(--vintage-sepia-text));
-  
+
   --popover: hsl(var(--vintage-cream));
   --popover-foreground: hsl(var(--vintage-sepia-text));
-  
+
   --secondary: hsl(var(--vintage-sage));
   --secondary-foreground: hsl(var(--vintage-cream));
-  
+
   --muted: hsla(30, 15%, 20%, 0.1);
   --muted-foreground: hsla(30, 15%, 20%, 0.6);
-  
+
   --accent: hsl(var(--vintage-navy));
   --accent-foreground: hsl(var(--vintage-cream));
-  
+
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  
+
   --border: hsla(30, 15%, 20%, 0.2);
   --input: hsla(30, 15%, 20%, 0.1);
   --ring: hsl(var(--vintage-burnt-orange));
@@ -97,20 +102,25 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
-    background-image: 
-      linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px);
+    background-image:
+      linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
     background-size: 20px 20px;
   }
-  
-  h1, h2, h3, h4, .font-typewriter {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-typewriter {
     font-family: 'Special Elite', cursive;
     letter-spacing: -0.02em;
   }
-  
+
   .font-handwriting {
     font-family: 'Satisfy', cursive;
   }
@@ -119,9 +129,9 @@
 @layer components {
   .postcard-card {
     @apply border-4 border-white shadow-xl bg-white relative overflow-hidden;
-    box-shadow: 0 10px 30px -10px rgba(0,0,0,0.3);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
   }
-  
+
   .postcard-card::before {
     content: '';
     @apply absolute inset-0 opacity-[0.03] pointer-events-none;
@@ -132,20 +142,21 @@
     @apply absolute top-4 right-4 w-12 h-16 border-2 border-dashed border-muted rotate-3 bg-muted/20 flex items-center justify-center text-[10px] uppercase font-bold text-muted-foreground;
   }
 }
-  button:not(:disabled),
-  [role="button"]:not([aria-disabled="true"]),
-  [type="button"]:not(:disabled),
-  [type="submit"]:not(:disabled),
-  [type="reset"]:not(:disabled),
-  a[href],
-  select:not(:disabled),
-  input[type="checkbox"]:not(:disabled),
-  input[type="radio"]:not(:disabled) {
-    @apply cursor-pointer;
-  }
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[type="button"]:not(:disabled),
+[type="submit"]:not(:disabled),
+[type="reset"]:not(:disabled),
+a[href],
+select:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled) {
+  @apply cursor-pointer;
 }
 
 @layer components {
+
   /**
    * Custom container utility that centers content and adds responsive padding.
    *
@@ -163,7 +174,8 @@
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
+    padding-left: 1rem;
+    /* 16px - mobile padding */
     padding-right: 1rem;
   }
 
@@ -174,16 +186,19 @@
 
   @media (min-width: 640px) {
     .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
+      padding-left: 1.5rem;
+      /* 24px - tablet padding */
       padding-right: 1.5rem;
     }
   }
 
   @media (min-width: 1024px) {
     .container {
-      padding-left: 2rem; /* 32px - desktop padding */
+      padding-left: 2rem;
+      /* 32px - desktop padding */
       padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
+      max-width: 1280px;
+      /* Standard content width */
     }
   }
 }
