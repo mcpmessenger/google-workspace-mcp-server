@@ -7,11 +7,18 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CheckCircle2, AlertCircle, Server, Code, Zap, Shield, Database, ExternalLink } from "lucide-react";
 import { ConfigDialog } from "@/components/ConfigDialog";
 
+interface SystemSnapshot {
+  cpu_percent: number;
+  memory_percent: number;
+  memory_used_mb: number;
+}
+
 interface ServerStatus {
   status: "healthy" | "degraded" | "offline";
   uptime: string;
-  sessions: number;
+  sessions_active: number;
   lastCheck: string;
+  system?: SystemSnapshot;
 }
 
 interface ServiceStatus {
@@ -21,32 +28,52 @@ interface ServiceStatus {
   lastActivity?: string;
 }
 
+const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:8081";
+
 export default function Home() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
     status: "healthy",
-    uptime: "24h 15m",
-    sessions: 3,
-    lastCheck: new Date().toLocaleTimeString(),
+    uptime: "0s",
+    sessions_active: 0,
+    lastCheck: "Never",
   });
 
   const [services, setServices] = useState<ServiceStatus[]>([
-    { name: "Google Drive", enabled: true, status: "active", lastActivity: "2 min ago" },
-    { name: "Gmail", enabled: true, status: "active", lastActivity: "5 min ago" },
-    { name: "Google Calendar", enabled: true, status: "active", lastActivity: "1 min ago" },
+    { name: "Google Drive", enabled: true, status: "active", lastActivity: "Syncing..." },
+    { name: "Gmail", enabled: true, status: "active", lastActivity: "Syncing..." },
+    { name: "Google Calendar", enabled: true, status: "active", lastActivity: "Syncing..." },
     { name: "Google Docs", enabled: true, status: "inactive" },
     { name: "Google Sheets", enabled: true, status: "inactive" },
     { name: "Google Slides", enabled: true, status: "inactive" },
   ]);
 
   const [activeTab, setActiveTab] = useState("overview");
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/health`);
+      if (!response.ok) throw new Error("Backend unreachable");
+      const data = await response.json();
+
+      setServerStatus({
+        status: data.status,
+        uptime: data.uptime,
+        sessions_active: data.sessions_active,
+        lastCheck: new Date().toLocaleTimeString(),
+        system: data.system
+      });
+      setError(null);
+    } catch (err) {
+      console.error("Failed to fetch status:", err);
+      setServerStatus(prev => ({ ...prev, status: "offline" }));
+      setError("Cannot connect to MCP server");
+    }
+  };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setServerStatus(prev => ({
-        ...prev,
-        lastCheck: new Date().toLocaleTimeString(),
-      }));
-    }, 30000);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000); // Poll every 5 seconds
     return () => clearInterval(interval);
   }, []);
 
@@ -120,7 +147,7 @@ export default function Home() {
           {[
             { label: "Server Status", value: serverStatus.status, icon: Server, color: "text-emerald-500" },
             { label: "Uptime", value: serverStatus.uptime, icon: Zap, color: "text-amber-500" },
-            { label: "Active Sessions", value: serverStatus.sessions, icon: Shield, color: "text-blue-500" }
+            { label: "Active Sessions", value: serverStatus.sessions_active, icon: Shield, color: "text-blue-500" }
           ].map((stat) => (
             <Card key={stat.label} className="nordic-card p-6 rounded-2xl flex items-center justify-between group">
               <div>
@@ -156,10 +183,10 @@ export default function Home() {
                 </CardHeader>
                 <CardContent className="p-8 grid grid-cols-2 gap-8">
                   {[
-                    { label: "Memory Usage", value: "512 MB" },
-                    { label: "CPU Usage", value: "15%" },
-                    { label: "Requests/min", value: "240" },
-                    { label: "Avg Response", value: "145ms" }
+                    { label: "Memory Usage", value: serverStatus.system ? `${serverStatus.system.memory_percent}%` : "---" },
+                    { label: "CPU Usage", value: serverStatus.system ? `${serverStatus.system.cpu_percent}%` : "---" },
+                    { label: "Process Memory", value: serverStatus.system ? `${serverStatus.system.memory_used_mb} MB` : "---" },
+                    { label: "Last Polled", value: serverStatus.lastCheck }
                   ].map((metric) => (
                     <div key={metric.label}>
                       <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">{metric.label}</p>

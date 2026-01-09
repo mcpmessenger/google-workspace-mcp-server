@@ -11,6 +11,10 @@ from typing import Optional, Any, List, Dict
 from datetime import datetime, timedelta
 import uuid
 import secrets
+import psutil
+
+# Track server start time for uptime calculation
+SERVER_START_TIME = datetime.utcnow()
 
 # Required for Google OAuth when scopes are automatically expanded by Google
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
@@ -344,11 +348,19 @@ app.add_middleware(
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Enhanced health check endpoint with real metrics"""
+    uptime = datetime.utcnow() - SERVER_START_TIME
+    
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "sessions_active": len(session_manager.sessions)
+        "uptime": str(uptime).split('.')[0],  # Format as H:MM:SS
+        "sessions_active": len(session_manager.sessions),
+        "system": {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "memory_used_mb": round(psutil.Process().memory_info().rss / (1024 * 1024), 2)
+        }
     }
 
 

@@ -10,3 +10,4 @@ pydantic==2.5.3
 redis==5.0.0
 httpx>=0.25.0
 google-cloud-secret-manager==2.16.4
+psutil==5.9.6
