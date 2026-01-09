@@ -11,10 +11,11 @@ A professional [Model Context Protocol (MCP)](https://modelcontextprotocol.io) s
 
 - **Standard MCP Protocol**: Implements the latest MCP specification using Streamable HTTP transport.
 - **Google Workspace Integration**:
-  - **Drive**: Search, read, and manage files.
-  - **Gmail**: Search and send messages, manage threads.
-  - **Calendar**: List calendars and manage events.
-- **Vintage Dashboard**: A beautifully designed "Retro Postcard" management interface to monitor server health, sessions, and configuration.
+  - **Drive**: Search, read, and export files.
+  - **Gmail**: Search threads, manage drafts, and send emails.
+  - **Calendar**: List events and manage schedules.
+  - **Docs/Sheets/Slides**: Create and edit documents, spreadsheets, and presentations.
+- **Modern Nordic Dashboard**: A clean, professional "Snow & Slate" management interface with dark mode, live metrics, and real-time status.
 - **Cloud Ready**: Optimized for deployment on Google Cloud Run.
 
 ## 🚀 Quick Start
@@ -31,6 +32,31 @@ A professional [Model Context Protocol (MCP)](https://modelcontextprotocol.io) s
 git clone https://github.com/mcpmessenger/google-workspace-mcp-server.git
 cd google-workspace-mcp-server
 ```
+
+### Client Integration (Claude Desktop)
+
+To use this server with Claude Desktop, add the following to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "google-workspace": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-workspace"],
+      "env": {
+        "GOOGLE_CLIENT_ID": "your-client-id",
+        "GOOGLE_CLIENT_SECRET": "your-client-secret"
+      }
+    },
+    "workspace-cloud": {
+      "url": "https://your-service-url.a.run.app/mcp",
+      "transport": "sse"
+    }
+  }
+}
+```
+
+> **Note**: For the Cloud Run deployment, simply use the `url` transport as shown above.
 
 ### 2. Backend Setup
 
@@ -80,7 +106,7 @@ gcloud run deploy google-workspace-mcp-server --source . --region us-central1
 
 ### 2. Environment Configuration
 
-Ensure the following environment variables are set in Cloud Run (you can use an `env_vars.yaml` file):
+Ensure the following environment variables are set in Cloud Run:
 
 ```yaml
 GOOGLE_CLIENT_ID: "your-client-id"
@@ -88,13 +114,13 @@ GOOGLE_CLIENT_SECRET: "your-client-secret"
 OAUTH_REDIRECT_URI: "https://your-service-url.a.run.app/oauth/callback"
 OAUTH_AUTH_ENDPOINT: "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_ENDPOINT: "https://oauth2.googleapis.com/token"
-OAUTH_SCOPES: "openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/userinfo.profile,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/calendar"
+OAUTH_SCOPES: "openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/userinfo.profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/drive.readonly,https://www.googleapis.com/auth/calendar.readonly,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/presentations"
 OAUTHLIB_RELAX_TOKEN_SCOPE: "1"
 ```
 
 ### 3. Google Cloud Console Setup
 
-1.  **OAuth Consent Screen**: Add `openid`, `email`, `profile`, and the Google Workspace API scopes you need.
+1.  **OAuth Consent Screen**: Add the scopes listed above.
 2.  **Credentials**: Create an OAuth 2.0 Client ID for a **Web Application**.
 3.  **Authorized Redirect URIs**: Add `https://your-service-url.a.run.app/oauth/callback`.
 
