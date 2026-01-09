@@ -42,9 +42,9 @@ export default function Home() {
     { name: "Google Drive", enabled: true, status: "active", lastActivity: "Syncing..." },
     { name: "Gmail", enabled: true, status: "active", lastActivity: "Syncing..." },
     { name: "Google Calendar", enabled: true, status: "active", lastActivity: "Syncing..." },
-    { name: "Google Docs", enabled: true, status: "inactive" },
-    { name: "Google Sheets", enabled: true, status: "inactive" },
-    { name: "Google Slides", enabled: true, status: "inactive" },
+    { name: "Google Docs", enabled: true, status: "active", lastActivity: "Ready" },
+    { name: "Google Sheets", enabled: true, status: "active", lastActivity: "Ready" },
+    { name: "Google Slides", enabled: true, status: "active", lastActivity: "Ready" },
   ]);
 
   const [activeTab, setActiveTab] = useState("overview");
