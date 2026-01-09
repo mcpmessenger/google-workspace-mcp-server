@@ -1,0 +1,63 @@
+﻿python : Traceback (most recent call last):
+At line:1 char:1
++ python -c "import main" 2>&1 | Out-File 
+-FilePath traceback.txt -Enco ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Tra 
+   ceback (most recent call last)::String) [],   
+  RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import main
+  File "C:\Users\senti\OneDrive\Desktop\mcp SERVE
+RS\google-workspace-mcp-server\backend\main.py", 
+line 28, in <module>
+    load_dotenv()
+    ~~~~~~~~~~~^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\main.py", 
+line 384, in load_dotenv
+    return dotenv.set_as_environment_variables()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\main.py", 
+line 104, in set_as_environment_variables
+    if not self.dict():
+           ~~~~~~~~~^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\main.py", 
+line 87, in dict
+    resolve_variables(raw_values, 
+override=self.override)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\main.py", 
+line 250, in resolve_variables
+    for name, value in values:
+                       ^^^^^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\main.py", 
+line 96, in parse
+    for mapping in with_warn_for_invalid_lines(pa
+rse_stream(stream)):
+                   
+~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\main.py", 
+line 36, in with_warn_for_invalid_lines
+    for mapping in mappings:
+                   ^^^^^^^^
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\parser.py"
+, line 180, in parse_stream
+    reader = Reader(stream)
+  File "C:\Users\senti\AppData\Local\Python\pytho
+ncore-3.14-64\Lib\site-packages\dotenv\parser.py"
+, line 71, in __init__
+    self.string = stream.read()
+                  ~~~~~~~~~~~^^
+  File "<frozen codecs>", line 325, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode 
+byte 0xff in position 0: invalid start byte

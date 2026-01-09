@@ -1,0 +1,36 @@
+apiVersion: run.cnrm.cloud.google.com/v1beta1
+kind: RunService
+metadata:
+  name: google-workspace-mcp-server
+spec:
+  location: us-central1
+  template:
+    spec:
+      containers:
+      - image: gcr.io/PROJECT_ID/google-workspace-mcp:latest
+        resources:
+          limits:
+            memory: 1Gi
+            cpu: "1"
+        env:
+        - name: PORT
+          value: "8080"
+        - name: OAUTH_ISSUER
+          value: "https://accounts.google.com"
+        - name: OAUTH_AUTH_ENDPOINT
+          value: "https://accounts.google.com/o/oauth2/v2/auth"
+        - name: OAUTH_TOKEN_ENDPOINT
+          value: "https://oauth2.googleapis.com/token"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+      concurrency: 80
+      timeoutSeconds: 3600
+      serviceAccountName: google-workspace-mcp@PROJECT_ID.iam.gserviceaccount.com
+  traffic:
+  - percent: 100
+    latestRevision: true
+  ingress: INGRESS_TRAFFIC_INTERNAL_AND_CLOUD_LOAD_BALANCING
