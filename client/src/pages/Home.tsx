@@ -4,17 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, AlertCircle, Server, Settings, Code, Zap, Shield, Database } from "lucide-react";
-
-/**
- * Google Workspace MCP Server Dashboard
- * 
- * Design Philosophy: Modern, professional tech dashboard with clear information hierarchy
- * - Clean typography with semantic color usage
- * - Card-based layout for modular content
- * - Real-time status indicators
- * - Responsive grid system
- */
+import { CheckCircle2, AlertCircle, Server, Code, Zap, Shield, Database, ExternalLink } from "lucide-react";
+import { ConfigDialog } from "@/components/ConfigDialog";
 
 interface ServerStatus {
   status: "healthy" | "degraded" | "offline";
@@ -49,7 +40,6 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Simulate status updates
   useEffect(() => {
     const interval = setInterval(() => {
       setServerStatus(prev => ({
@@ -57,37 +47,21 @@ export default function Home() {
         lastCheck: new Date().toLocaleTimeString(),
       }));
     }, 30000);
-
     return () => clearInterval(interval);
   }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case "healthy":
       case "active":
-        return "bg-green-100 text-green-800";
+        return <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider">{status}</Badge>;
       case "degraded":
-        return "bg-yellow-100 text-yellow-800";
+        return <Badge className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider">{status}</Badge>;
       case "offline":
       case "error":
-        return "bg-red-100 text-red-800";
+        return <Badge className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border-rose-500/20 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider">{status}</Badge>;
       default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "healthy":
-      case "active":
-        return <CheckCircle2 className="w-4 h-4" />;
-      case "degraded":
-        return <AlertCircle className="w-4 h-4" />;
-      case "offline":
-      case "error":
-        return <AlertCircle className="w-4 h-4" />;
-      default:
-        return null;
+        return <Badge variant="outline">{status}</Badge>;
     }
   };
 
@@ -99,411 +73,223 @@ export default function Home() {
     if (name.includes("docs")) return "/docs.png";
     if (name.includes("sheets")) return "/sheets.png";
     if (name.includes("slides")) return "/slides.png";
-    return "/mcp-logo.png"; // fallback
+    return "/mcp-logo.png";
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8 flex flex-col items-center">
-      {/* Header */}
-      <header className="w-full max-w-5xl mb-12 relative">
-        <div className="flex items-center justify-between mb-8">
-          <div className="select-none flex items-center gap-4 group">
-            <img
-              src="/user-branding.png"
-              alt="User Logo"
-              className="w-24 h-24 object-contain hover:scale-110 transition-transform cursor-pointer"
-              onClick={() => setActiveTab("overview")}
-            />
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 transition-colors duration-300">
+      <div className="max-w-6xl mx-auto px-6 py-12">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row items-center justify-between gap-8 mb-16 border-b border-border pb-12">
+          <div className="flex items-center gap-6">
+            <div className="p-3 rounded-2xl bg-primary/5 border border-primary/10">
+              <img src="/user-branding.png" alt="User Logo" className="w-16 h-16 object-contain" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Google Workspace MCP</h1>
+              <p className="text-muted-foreground font-medium">Professional Server Dashboard</p>
+            </div>
           </div>
 
-          <div className="text-center flex-1">
-            <h1 className="text-4xl md:text-5xl font-bold text-foreground">Google Workspace MCP</h1>
-            <p className="text-lg md:text-xl font-handwriting text-primary mt-1">Model Context Protocol Dashboard</p>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 font-semibold"
+              onClick={() => window.open("https://github.com/mcpmessenger/google-workspace-mcp-server", "_blank")}
+            >
+              <ExternalLink className="w-4 h-4" />
+              Docs
+            </Button>
+            <ConfigDialog />
           </div>
+        </header>
 
-          <div className="select-none flex items-center gap-4 group">
-            <img
-              src="/mcp-logo.png"
-              alt="MCP Logo"
-              className="w-16 h-16 object-contain opacity-40 hover:opacity-100 transition-opacity rotate-12 group-hover:rotate-0 transition-transform"
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-center gap-4">
-          <Button
-            variant="outline"
-            className="border-2 border-foreground hover:bg-foreground hover:text-background font-typewriter transform -rotate-1 transition-transform"
-            onClick={() => window.open("https://github.com/mcpmessenger/google-workspace-mcp-server", "_blank")}
-          >
-            [ Documentation ]
-          </Button>
-          <Button className="bg-primary text-primary-foreground border-2 border-primary hover:bg-transparent hover:text-primary font-typewriter transform rotate-1 transition-transform">
-            [ Configure Server ]
-          </Button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="w-full max-w-5xl space-y-12">
         {/* Status Alert */}
         {serverStatus.status !== "healthy" && (
-          <Alert className="border-4 border-destructive bg-destructive/10 font-typewriter postcard-card mb-8">
-            <AlertCircle className="h-5 w-5 text-destructive" />
-            <AlertDescription className="text-destructive font-bold uppercase tracking-widest">
-              SYSTEM ALERT: Server status is {serverStatus.status}.
+          <Alert variant="destructive" className="mb-8 rounded-xl border-rose-500/20 bg-rose-500/5">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="font-semibold uppercase tracking-wider text-xs">
+              System Alert: Server status is {serverStatus.status}
             </AlertDescription>
           </Alert>
         )}
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-10">
-          <TabsList className="bg-transparent gap-2 h-auto flex-wrap justify-center border-b-2 border-foreground/20 pb-2">
+        {/* Global Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          {[
+            { label: "Server Status", value: serverStatus.status, icon: Server, color: "text-emerald-500" },
+            { label: "Uptime", value: serverStatus.uptime, icon: Zap, color: "text-amber-500" },
+            { label: "Active Sessions", value: serverStatus.sessions, icon: Shield, color: "text-blue-500" }
+          ].map((stat) => (
+            <Card key={stat.label} className="nordic-card p-6 rounded-2xl flex items-center justify-between group">
+              <div>
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1">{stat.label}</p>
+                <p className="text-2xl font-bold tracking-tight capitalize">{stat.value}</p>
+              </div>
+              <div className={`p-3 rounded-xl bg-muted/30 group-hover:scale-110 transition-transform duration-300`}>
+                <stat.icon className={`w-5 h-5 ${stat.color}`} />
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        {/* Main Content Sections */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+          <TabsList className="bg-muted/30 p-1 rounded-xl glass">
             {["Overview", "Services", "Configuration", "Deployment"].map((tab) => (
               <TabsTrigger
                 key={tab.toLowerCase()}
                 value={tab.toLowerCase()}
-                className="data-[state=active]:bg-foreground data-[state=active]:text-background border-2 border-foreground px-6 py-2 font-typewriter uppercase text-xs tracking-tighter transition-all"
+                className="rounded-lg px-8 py-2 text-sm font-semibold transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
               >
                 {tab}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-6">
-            {/* Server Status Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Status Card */}
-              <Card className="postcard-card transform -rotate-1">
-                <div className="postcard-stamp">PRORITY</div>
-                <CardHeader className="pb-3 border-b-2 border-foreground/10 mx-4">
-                  <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Server Status</CardTitle>
+          <TabsContent value="overview" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <Card className="nordic-card rounded-2xl overflow-hidden">
+                <CardHeader className="bg-muted/30 pb-6 border-b border-border">
+                  <CardTitle className="text-sm font-bold uppercase tracking-widest">System Metrics</CardTitle>
                 </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full ${serverStatus.status === "healthy" ? "bg-green-600 shadow-[0_0_10px_rgba(22,163,74,0.5)]" : "bg-yellow-500"}`} />
-                    <span className="text-3xl font-bold tracking-tighter uppercase">{serverStatus.status}</span>
-                  </div>
-                  <p className="text-xs font-typewriter mt-4 text-muted-foreground italic">Checked: {serverStatus.lastCheck}</p>
-                </CardContent>
-              </Card>
-
-              {/* Uptime Card */}
-              <Card className="postcard-card transform rotate-2">
-                <div className="postcard-stamp">UPTIME</div>
-                <CardHeader className="pb-3 border-b-2 border-foreground/10 mx-4">
-                  <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Uptime</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="text-3xl font-bold tracking-tighter">{serverStatus.uptime}</div>
-                  <p className="text-xs font-typewriter mt-4 text-muted-foreground italic">Continuous Log Service</p>
-                </CardContent>
-              </Card>
-
-              {/* Active Sessions Card */}
-              <Card className="postcard-card transform -rotate-1">
-                <div className="postcard-stamp">CLIENTS</div>
-                <CardHeader className="pb-3 border-b-2 border-foreground/10 mx-4">
-                  <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Active Sessions</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="text-3xl font-bold tracking-tighter">{serverStatus.sessions}</div>
-                  <p className="text-xs font-typewriter mt-4 text-muted-foreground italic">Authenticated Users</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Quick Stats */}
-            <Card className="postcard-card border-l-[12px] border-l-primary/30">
-              <CardHeader>
-                <CardTitle className="text-lg uppercase">System Metrics</CardTitle>
-                <CardDescription className="font-handwriting text-primary text-lg">Real-time performance logs</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <CardContent className="p-8 grid grid-cols-2 gap-8">
                   {[
                     { label: "Memory Usage", value: "512 MB" },
                     { label: "CPU Usage", value: "15%" },
                     { label: "Requests/min", value: "240" },
                     { label: "Avg Response", value: "145ms" }
-                  ].map((stat) => (
-                    <div key={stat.label} className="p-4 border-2 border-foreground/10 bg-background/50 pointer-events-none">
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground">{stat.label}</p>
-                      <p className="text-2xl font-bold tracking-tighter mt-1">{stat.value}</p>
+                  ].map((metric) => (
+                    <div key={metric.label}>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">{metric.label}</p>
+                      <p className="text-2xl font-bold">{metric.value}</p>
                     </div>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {/* Features Overview */}
-            <Card className="postcard-card border-r-[12px] border-r-secondary/30">
-              <CardHeader>
-                <CardTitle className="text-lg uppercase">Streamable HTTP Transport</CardTitle>
-                <CardDescription className="font-handwriting text-secondary text-lg">MCP Protocol Implementation Features</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="nordic-card rounded-2xl overflow-hidden">
+                <CardHeader className="bg-muted/30 pb-6 border-b border-border">
+                  <CardTitle className="text-sm font-bold uppercase tracking-widest">Protocol Capabilities</CardTitle>
+                </CardHeader>
+                <CardContent className="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { icon: Zap, color: "text-primary", bg: "bg-primary/5", title: "Unified HTTP Endpoint", desc: "Single /mcp endpoint for all operations" },
-                    { icon: Shield, color: "text-green-700", bg: "bg-green-700/5", title: "Secure Sessions", desc: "Cryptographic session IDs" },
-                    { icon: Database, color: "text-accent", bg: "bg-accent/5", title: "Server-Sent Events", desc: "Bidirectional communication" },
-                    { icon: Code, color: "text-secondary", bg: "bg-secondary/5", title: "JSON-RPC 2.0", desc: "Standard message format" }
+                    { icon: Zap, title: "Unified Endpoint", desc: "Single /mcp gateway" },
+                    { icon: Shield, title: "Secure Sessions", desc: "Encrypted handshake" },
+                    { icon: Database, title: "Persistence", desc: "Stateless scalability" },
+                    { icon: Code, title: "JSON-RPC 2.0", desc: "Standard structure" }
                   ].map((feat) => (
-                    <div key={feat.title} className="flex gap-4 p-4 border-2 border-foreground/5 items-start">
-                      <feat.icon className={`w-6 h-6 ${feat.color} flex-shrink-0`} />
+                    <div key={feat.title} className="flex gap-4 items-start group">
+                      <div className="p-2 rounded-lg bg-primary/5 group-hover:bg-primary/10 transition-colors">
+                        <feat.icon className="w-4 h-4 text-primary" />
+                      </div>
                       <div>
-                        <p className="font-bold uppercase text-xs tracking-widest">{feat.title}</p>
-                        <p className="text-sm text-muted-foreground mt-1 leading-tight">{feat.desc}</p>
+                        <p className="text-xs font-bold uppercase">{feat.title}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{feat.desc}</p>
                       </div>
                     </div>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
-          {/* Services Tab */}
-          <TabsContent value="services" className="space-y-10">
-            <Card className="postcard-card border-t-[12px] border-t-secondary/30">
-              <CardHeader>
-                <CardTitle className="text-lg uppercase">Google Workspace Services</CardTitle>
-                <CardDescription className="font-handwriting text-secondary text-lg">Integration status and activity logs</CardDescription>
+          <TabsContent value="services" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <Card className="nordic-card rounded-2xl overflow-hidden">
+              <CardHeader className="bg-muted/30 pb-6 border-b border-border">
+                <CardTitle className="text-sm font-bold uppercase tracking-widest">Workspace Services</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
+              <CardContent className="p-0">
+                <div className="divide-y divide-border">
                   {services.map((service) => (
-                    <div key={service.name} className="flex items-center justify-between p-4 border-2 border-foreground/5 hover:bg-foreground/5 transition cursor-pointer group">
-                      <div className="flex items-center gap-4">
-                        <div className={`p-2 border-2 ${service.status === "active" ? "border-green-600/50 bg-green-50" : "border-foreground/10 bg-background"}`}>
+                    <div key={service.name} className="flex items-center justify-between p-6 hover:bg-muted/20 transition-colors">
+                      <div className="flex items-center gap-6">
+                        <div className="relative">
                           <img
                             src={getServiceIcon(service.name)}
                             alt={service.name}
-                            className={`w-8 h-8 object-contain ${service.status === "active" ? "" : "grayscale"}`}
+                            className={`w-10 h-10 object-contain ${service.status === "active" ? "" : "grayscale opacity-40"}`}
                           />
+                          {service.status === "active" && (
+                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-background" />
+                          )}
                         </div>
                         <div>
-                          <p className="font-bold uppercase text-sm tracking-widest group-hover:text-primary transition-colors">{service.name}</p>
+                          <p className="font-bold text-sm tracking-tight">{service.name}</p>
                           {service.lastActivity && (
-                            <p className="text-[10px] font-typewriter text-muted-foreground mt-1 underline decoration-dotted">Last activity: {service.lastActivity}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5 font-medium italic">Active {service.lastActivity}</p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Badge className={`${getStatusColor(service.status)} border-2 border-current px-3 py-1 font-typewriter uppercase text-[10px] bg-transparent`}>
-                          <span className="flex items-center gap-2">
-                            {getStatusIcon(service.status)}
-                            {service.status}
-                          </span>
-                        </Badge>
-                      </div>
+                      {getStatusBadge(service.status)}
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
-
-            {/* Tool Categories */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {[
-                { title: "Drive Tools", icon: "/drive.png", items: ["search_drive_files", "get_drive_file_content", "create_drive_file", "update_drive_file", "list_drive_items"], color: "border-primary/20" },
-                { title: "Gmail Tools", icon: "/gmail.webp", items: ["search_gmail_messages", "get_gmail_message_content", "send_gmail_message", "modify_gmail_labels", "get_thread_content_batch"], color: "border-secondary/20" },
-                { title: "Calendar Tools", icon: "/calendar.png", items: ["list_calendars", "get_events", "create_event", "query_free_busy", "quick_add_event"], color: "border-accent/20" },
-                {
-                  title: "G-Suite Services", items: [
-                    { n: "Google Docs", i: "/docs.png" },
-                    { n: "Google Sheets", i: "/sheets.png" },
-                    { n: "Google Slides", i: "/slides.png" }
-                  ], color: "border-foreground/20"
-                }
-              ].map((cat) => (
-                <Card key={cat.title} className={`postcard-card border-t-4 ${cat.color} transform ${Math.random() > 0.5 ? 'rotate-1' : '-rotate-1'}`}>
-                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm uppercase tracking-widest font-bold">{cat.title}</CardTitle>
-                    {cat.icon && <img src={cat.icon} alt={cat.title} className="w-6 h-6 object-contain" />}
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-xs font-typewriter text-muted-foreground pt-2">
-                    {cat.title === "G-Suite Services" ? (
-                      <div className="grid grid-cols-1 gap-2">
-                        {cat.items.map((item: any) => (
-                          <div key={item.n} className="flex items-center gap-3 p-1 border-b border-foreground/5">
-                            <img src={item.i} alt={item.n} className="w-4 h-4 object-contain" />
-                            <span>{item.n}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      cat.items.map((item: any) => (
-                        <p key={item} className="p-1 border-b border-foreground/5 hover:text-foreground transition-colors">{" >> "} {item}</p>
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
           </TabsContent>
 
-          {/* Configuration Tab */}
-          <TabsContent value="configuration" className="space-y-10">
-            <Card className="postcard-card border-b-[12px] border-b-accent/30">
-              <CardHeader>
-                <CardTitle className="text-lg uppercase">Server Configuration</CardTitle>
-                <CardDescription className="font-handwriting text-accent text-lg">Current environment logs</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[
-                    { label: "Host Address", value: "0.0.0.0" },
-                    { label: "Server Port", value: "8080" },
-                    { label: "Protocol Version", value: "2025-03" },
-                    { label: "Session Lifecycle", value: "24 hours" }
-                  ].map((cfg) => (
-                    <div key={cfg.label} className="p-4 border-2 border-foreground/5 bg-background/30 font-typewriter">
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">{cfg.label}</p>
-                      <p className="text-sm font-bold tracking-widest">{cfg.value}</p>
-                    </div>
-                  ))}
+          <TabsContent value="configuration" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <Card className="nordic-card rounded-2xl overflow-hidden p-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                <div className="space-y-6">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground border-b border-border pb-4">Endpoint Configuration</h3>
+                  <div className="grid gap-4">
+                    {[
+                      { label: "Host Address", value: "0.0.0.0" },
+                      { label: "Server Port", value: "8080" },
+                      { label: "Protocol", value: "MCP v1.0.4" }
+                    ].map(cfg => (
+                      <div key={cfg.label} className="flex justify-between items-center py-2 border-b border-border/10">
+                        <span className="text-xs font-semibold text-muted-foreground">{cfg.label}</span>
+                        <span className="text-xs font-mono font-bold">{cfg.value}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <Card className="postcard-card transform rotate-1">
-                <CardHeader>
-                  <CardTitle className="text-sm uppercase font-bold">OAuth 2.1 Protocol</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 font-typewriter text-xs">
-                  <div className="p-3 border-l-4 border-primary bg-primary/5">
-                    <p className="text-[10px] font-bold opacity-50 uppercase">Auth Endpoint</p>
-                    <p className="break-all mt-1">https://accounts.google.com/o/oauth2/v2/auth</p>
-                  </div>
-                  <div className="p-3 border-l-4 border-primary bg-primary/5">
-                    <p className="text-[10px] font-bold opacity-50 uppercase">Token exchange</p>
-                    <p className="break-all mt-1">https://oauth2.googleapis.com/token</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="postcard-card transform -rotate-1">
-                <CardHeader>
-                  <CardTitle className="text-sm uppercase font-bold">Security Shields</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 font-typewriter text-xs">
-                  {[
-                    "DNS Rebinding Protection",
-                    "CORS Proxy Layer",
-                    "Session Isolation"
-                  ].map((shield) => (
-                    <div key={shield} className="flex items-center justify-between p-2 border-b border-foreground/5">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-3 h-3 text-green-600" />
-                        <span>{shield}</span>
+                <div className="space-y-6">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground border-b border-border pb-4">Security Layer</h3>
+                  <div className="grid gap-3">
+                    {["DNS Rebinding Shield", "CORS Proxy Layer", "Session Isolation"].map(s => (
+                      <div key={s} className="flex items-center gap-3 text-xs font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        {s}
                       </div>
-                      <span className="text-[8px] bg-green-100 text-green-800 px-2 py-0.5 font-bold uppercase">ACTIVE</span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
           </TabsContent>
 
-          {/* Deployment Tab */}
-          <TabsContent value="deployment" className="space-y-10">
-            <Card className="postcard-card border-t-[12px] border-t-primary/20">
-              <CardHeader>
-                <CardTitle className="text-lg uppercase">Cloud Run Manifest</CardTitle>
-                <CardDescription className="font-handwriting text-primary text-lg">Production deployment protocol</CardDescription>
+          <TabsContent value="deployment" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <Card className="nordic-card rounded-2xl overflow-hidden">
+              <CardHeader className="bg-muted/30 pb-6 border-b border-border">
+                <CardTitle className="text-sm font-bold uppercase tracking-widest">Cloud Run Command</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-8">
-                <div className="bg-foreground text-background p-6 font-typewriter text-[11px] leading-relaxed relative overflow-hidden group">
-                  <div className="absolute top-2 right-2 opacity-10 group-hover:opacity-30 transition-opacity">
-                    <Code className="w-24 h-24" />
-                  </div>
-                  <p className="mb-4 text-primary font-bold"># gcloud deployment script v1.0.4</p>
-                  <pre className="whitespace-pre-wrap">
-                    {`gcloud run deploy google-workspace-mcp-server \\
-  --image gcr.io/PROJECT_ID/google-workspace-mcp:latest \\
+              <CardContent className="p-8 bg-slate-900 text-slate-200">
+                <pre className="font-mono text-xs leading-relaxed overflow-x-auto">
+                  {`gcloud run deploy google-workspace-mcp-server \\
+  --image gcr.io/PROJECT_ID/mcp-server:latest \\
   --platform managed \\
   --region us-central1 \\
   --memory 1Gi --cpu 1 \\
-  --concurrency 80 \\
   --no-allow-unauthenticated`}
-                  </pre>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pb-4">
-                  {[
-                    { l: "Memory", v: "1GB" },
-                    { l: "CPU", v: "1 vCPU" },
-                    { l: "Concurrent", v: "80" },
-                    { l: "Timeout", v: "3600s" }
-                  ].map(spec => (
-                    <div key={spec.l} className="text-center border-2 border-foreground/5 py-3 font-typewriter">
-                      <p className="text-[10px] uppercase opacity-50">{spec.l}</p>
-                      <p className="text-sm font-bold">{spec.v}</p>
-                    </div>
-                  ))}
-                </div>
+                </pre>
               </CardContent>
             </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <Card className="postcard-card transform -rotate-1">
-                <CardHeader>
-                  <CardTitle className="text-sm uppercase font-bold">Deployment Checklist</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 font-typewriter text-xs text-muted-foreground">
-                  {[
-                    "Docker image tagged and pushed",
-                    "Service account with IAM roles",
-                    "OAuth secrets in Manager",
-                    "Cloud Logging verified",
-                    "Monitoring alerts established"
-                  ].map(step => (
-                    <div key={step} className="flex items-center gap-3 p-1">
-                      <div className="w-4 h-4 border-2 border-foreground/20 flex items-center justify-center">
-                        <CheckCircle2 className="w-3 h-3 text-green-600" />
-                      </div>
-                      <span>{step}</span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card className="postcard-card transform rotate-2">
-                <CardHeader>
-                  <CardTitle className="text-sm uppercase font-bold">Quick Protocols</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {[
-                    "Backend README",
-                    "Cloud Run Guide",
-                    "MCP Specification",
-                    "Workspace APIs"
-                  ].map(link => (
-                    <Button key={link} variant="link" className="w-full justify-start font-typewriter text-xs text-muted-foreground hover:text-primary h-auto p-0">
-                      {" >> "} VIEW {link.toUpperCase()}
-                    </Button>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
         </Tabs>
-      </main>
+      </div>
 
       {/* Footer */}
-      <footer className="w-full max-w-5xl mt-24 mb-12 relative flex flex-col items-center">
-        <div className="absolute top-0 w-full h-[1px] bg-foreground/20" />
-        <div className="pt-12 text-center text-xs font-typewriter uppercase tracking-widest text-muted-foreground">
-          <p>Google Workspace MCP Server • Model Context Protocol Implementation</p>
-          <p className="mt-2 opacity-50 font-handwriting text-lg text-primary capitalize tracking-normal">Streamable HTTP Transport • Cloud Run Ready</p>
-        </div>
-        <div className="mt-12 opacity-10 grayscale hover:grayscale-0 transition-all cursor-crosshair">
-          <img src="/mcp-logo.png" alt="MCP" className="w-20 h-20 object-contain" />
-        </div>
+      <footer className="max-w-6xl mx-auto px-6 mt-32 border-t border-border py-12 flex flex-col items-center gap-4">
+        <img src="/mcp-logo.png" alt="MCP" className="w-10 h-10 object-contain opacity-20 grayscale" />
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
+          Google Workspace MCP Server • Professional 2026
+        </p>
       </footer>
-    </div >
+    </div>
   );
 }
