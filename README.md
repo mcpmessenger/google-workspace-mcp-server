@@ -67,6 +67,37 @@ pnpm dev
 
 The dashboard will be available at `http://localhost:3000` (or the port specified by Vite).
 
+## ☁️ Cloud Deployment
+
+### 1. Google Cloud Run
+
+To deploy the backend to Cloud Run:
+
+```bash
+cd backend
+gcloud run deploy google-workspace-mcp-server --source . --region us-central1
+```
+
+### 2. Environment Configuration
+
+Ensure the following environment variables are set in Cloud Run (you can use an `env_vars.yaml` file):
+
+```yaml
+GOOGLE_CLIENT_ID: "your-client-id"
+GOOGLE_CLIENT_SECRET: "your-client-secret"
+OAUTH_REDIRECT_URI: "https://your-service-url.a.run.app/oauth/callback"
+OAUTH_AUTH_ENDPOINT: "https://accounts.google.com/o/oauth2/v2/auth"
+OAUTH_TOKEN_ENDPOINT: "https://oauth2.googleapis.com/token"
+OAUTH_SCOPES: "openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/userinfo.profile,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/calendar"
+OAUTHLIB_RELAX_TOKEN_SCOPE: "1"
+```
+
+### 3. Google Cloud Console Setup
+
+1.  **OAuth Consent Screen**: Add `openid`, `email`, `profile`, and the Google Workspace API scopes you need.
+2.  **Credentials**: Create an OAuth 2.0 Client ID for a **Web Application**.
+3.  **Authorized Redirect URIs**: Add `https://your-service-url.a.run.app/oauth/callback`.
+
 ## 🛠️ Components
 
 - **Backend**: FastAPI server handling MCP requests and Google OAuth.
@@ -75,7 +106,7 @@ The dashboard will be available at `http://localhost:3000` (or the port specifie
 
 ## 📜 Documentation
 
-For detailed protocol specifications and API usage, visit the [official documentation](https://github.com/mcpmessenger/google-workspace-mcp-server).
+For a step-by-step verification guide, check out the [Walkthrough](file:///C:/Users/senti/.gemini/antigravity/brain/cb6a28a9-b834-4946-a1f3-8413abd01710/walkthrough.md).
 
 ## 📄 License
 

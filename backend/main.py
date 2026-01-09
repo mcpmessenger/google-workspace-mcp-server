@@ -7,19 +7,29 @@ import os
 import json
 import logging
 import asyncio
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 from datetime import datetime, timedelta
 import uuid
 import secrets
 
-from fastapi import FastAPI, Request, HTTPException, Header
-from fastapi.responses import StreamingResponse, JSONResponse
+# Required for Google OAuth when scopes are automatically expanded by Google
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+
+from fastapi import FastAPI, Request, Response, HTTPException, Header
+from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+# Google OAuth and API imports
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request as GoogleAuthRequest
+import httpx
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -115,6 +125,52 @@ class SessionManager:
                 if hasattr(session, key):
                     setattr(session, key, value)
         return session
+    
+    def store_oauth_tokens(self, session_id: str, tokens: dict) -> bool:
+        """Store OAuth tokens for a session"""
+        session = self.get_session(session_id)
+        if session:
+            session.oauth_tokens = tokens
+            session.last_activity = datetime.utcnow()
+            logger.info(f"OAuth tokens stored for session: {session_id}")
+            return True
+        return False
+    
+    def get_oauth_tokens(self, session_id: str) -> Optional[dict]:
+        """Retrieve OAuth tokens for a session"""
+        session = self.get_session(session_id)
+        return session.oauth_tokens if session else None
+    
+    def refresh_oauth_token(self, session_id: str) -> Optional[dict]:
+        """Refresh OAuth access token using refresh token"""
+        session = self.get_session(session_id)
+        if not session or not session.oauth_tokens.get('refresh_token'):
+            return None
+        
+        try:
+            creds = Credentials(
+                token=session.oauth_tokens.get('access_token'),
+                refresh_token=session.oauth_tokens['refresh_token'],
+                token_uri=os.getenv('OAUTH_TOKEN_ENDPOINT'),
+                client_id=os.getenv('GOOGLE_CLIENT_ID'),
+                client_secret=os.getenv('GOOGLE_CLIENT_SECRET')
+            )
+            
+            if creds.expired and creds.refresh_token:
+                creds.refresh(GoogleAuthRequest())
+                
+                # Update stored tokens
+                new_tokens = {
+                    'access_token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_expiry': creds.expiry.isoformat() if creds.expiry else None
+                }
+                self.store_oauth_tokens(session_id, new_tokens)
+                logger.info(f"OAuth token refreshed for session: {session_id}")
+                return new_tokens
+        except Exception as e:
+            logger.error(f"Failed to refresh OAuth token: {e}")
+            return None
 
 
 # ============================================================================
@@ -125,78 +181,129 @@ class GoogleWorkspaceTools:
     """Google Workspace API integration tools"""
     
     @staticmethod
-    async def search_drive_files(query: str, mime_type: Optional[str] = None, page_size: int = 10) -> dict:
+    def get_service(session_id: str, service_name: str, version: str):
+        """Get an authenticated Google API service"""
+        tokens = session_manager.get_oauth_tokens(session_id)
+        if not tokens or not tokens.get('access_token'):
+            return None
+            
+        creds = Credentials(
+            token=tokens.get('access_token'),
+            refresh_token=tokens.get('refresh_token'),
+            token_uri=os.getenv('OAUTH_TOKEN_ENDPOINT'),
+            client_id=os.getenv('GOOGLE_CLIENT_ID'),
+            client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+            scopes=tokens.get('scopes')
+        )
+        
+        # Check if expired and refresh if possible
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(GoogleAuthRequest())
+                # Update stored tokens
+                session_manager.store_oauth_tokens(session_id, {
+                    'access_token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_expiry': creds.expiry.isoformat() if creds.expiry else None,
+                    'scopes': creds.scopes
+                })
+            except Exception as e:
+                logger.error(f"Error refreshing token: {e}")
+                return None
+                
+        return build(service_name, version, credentials=creds)
+
+    async def search_drive_files(self, session_id: str, query: str, mime_type: Optional[str] = None, page_size: int = 10) -> dict:
         """Search Google Drive files"""
-        # Placeholder - implement with google-api-python-client
-        return {
-            "files": [
-                {
-                    "id": "file_123",
-                    "name": "Example Document",
-                    "mimeType": "application/vnd.google-apps.document",
-                    "modifiedTime": datetime.utcnow().isoformat()
-                }
-            ],
-            "query": query,
-            "mimeType": mime_type
-        }
+        service = self.get_service(session_id, 'drive', 'v3')
+        if not service:
+            return {"error": "Authentication required", "auth_url": f"{os.getenv('OAUTH_REDIRECT_URI').replace('/callback', '/authorize')}?session_id={session_id}"}
+        
+        q = query
+        if mime_type:
+            q = f"{q} and mimeType = '{mime_type}'"
+            
+        results = service.files().list(
+            q=q, pageSize=page_size, fields="nextPageToken, files(id, name, mimeType, modifiedTime)"
+        ).execute()
+        return results
     
-    @staticmethod
-    async def get_drive_file_content(file_id: str, export_format: Optional[str] = None) -> dict:
+    async def get_drive_file_content(self, session_id: str, file_id: str, export_format: Optional[str] = None) -> dict:
         """Get Google Drive file content"""
-        return {
-            "file_id": file_id,
-            "content": "File content would be retrieved here",
-            "format": export_format or "pdf"
-        }
+        service = self.get_service(session_id, 'drive', 'v3')
+        if not service:
+            return {"error": "Authentication required"}
+            
+        file = service.files().get(fileId=file_id, fields="name, mimeType").execute()
+        
+        if 'application/vnd.google-apps' in file['mimeType']:
+            # Export Google Docs/Sheets/Slides
+            export_mime = export_format or 'application/pdf'
+            content = service.files().export(fileId=file_id, mimeType=export_mime).execute()
+            # Return metadata; actual content usually streamed or saved
+            return {"file_id": file_id, "name": file['name'], "status": "Ready for export", "mimeType": export_mime}
+        else:
+            # Download regular files
+            return {"file_id": file_id, "name": file['name'], "status": "Ready for download", "mimeType": file['mimeType']}
     
-    @staticmethod
-    async def search_gmail_messages(query: str, max_results: int = 10) -> dict:
+    async def search_gmail_messages(self, session_id: str, query: str, max_results: int = 10) -> dict:
         """Search Gmail messages"""
-        return {
-            "messages": [
-                {
-                    "id": "msg_123",
-                    "threadId": "thread_123",
-                    "snippet": "Email snippet...",
-                    "internalDate": str(int(datetime.utcnow().timestamp() * 1000))
-                }
-            ],
-            "query": query,
-            "resultSizeEstimate": 1
-        }
+        service = self.get_service(session_id, 'gmail', 'v1')
+        if not service:
+            return {"error": "Authentication required"}
+            
+        results = service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
+        messages = []
+        if 'messages' in results:
+            for msg in results['messages']:
+                m = service.users().messages().get(userId='me', id=msg['id'], format='minimal').execute()
+                messages.append(m)
+        return {"messages": messages, "query": query}
+
+    async def gmail_create_draft(self, session_id: str, to: str, subject: str, body: str) -> dict:
+        """Create a Gmail draft"""
+        service = self.get_service(session_id, 'gmail', 'v1')
+        if not service:
+            return {"error": "Authentication required"}
+            
+        import base64
+        from email.message import EmailMessage
+        
+        message = EmailMessage()
+        message.set_content(body)
+        message['To'] = to
+        message['From'] = 'me'
+        message['Subject'] = subject
+        
+        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        create_message = {'message': {'raw': encoded_message}}
+        
+        draft = service.users().drafts().create(userId='me', body=create_message).execute()
+        return {"draft_id": draft['id'], "status": "Draft created successfully"}
     
-    @staticmethod
-    async def list_calendars(min_access_role: str = "reader") -> dict:
+    async def list_calendars(self, session_id: str, min_access_role: str = "reader") -> dict:
         """List available calendars"""
-        return {
-            "calendars": [
-                {
-                    "id": "primary",
-                    "summary": "Primary Calendar",
-                    "timeZone": "UTC",
-                    "accessRole": "owner"
-                }
-            ],
-            "minAccessRole": min_access_role
-        }
+        service = self.get_service(session_id, 'calendar', 'v3')
+        if not service:
+            return {"error": "Authentication required"}
+            
+        results = service.calendarList().list(minAccessRole=min_access_role).execute()
+        return results
     
-    @staticmethod
-    async def get_events(calendar_id: str, time_min: str, time_max: str) -> dict:
+    async def get_events(self, session_id: str, calendar_id: str, time_min: str, time_max: str) -> dict:
         """Get calendar events"""
-        return {
-            "calendarId": calendar_id,
-            "events": [
-                {
-                    "id": "event_123",
-                    "summary": "Meeting",
-                    "start": {"dateTime": time_min},
-                    "end": {"dateTime": time_max}
-                }
-            ],
-            "timeMin": time_min,
-            "timeMax": time_max
-        }
+        service = self.get_service(session_id, 'calendar', 'v3')
+        if not service:
+            return {"error": "Authentication required"}
+            
+        results = service.events().list(
+            calendarId=calendar_id, 
+            timeMin=time_min, 
+            timeMax=time_max, 
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        return results
 
 
 # ============================================================================
@@ -224,7 +331,7 @@ app = FastAPI(
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["localhost", "127.0.0.1"],  # Restrict for security
+    allow_origins=["*"],  # Open for development/testing
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
@@ -246,46 +353,99 @@ async def health_check():
 
 
 # ============================================================================
-# OAuth Discovery Endpoints
+# OAuth Endpoints
 # ============================================================================
 
-@app.get("/.well-known/oauth-authorization-server")
-async def oauth_discovery():
-    """OAuth 2.1 Authorization Server Discovery"""
-    return {
-        "issuer": os.getenv("OAUTH_ISSUER", "https://accounts.google.com"),
-        "authorization_endpoint": os.getenv("OAUTH_AUTH_ENDPOINT", "https://accounts.google.com/o/oauth2/v2/auth"),
-        "token_endpoint": os.getenv("OAUTH_TOKEN_ENDPOINT", "https://oauth2.googleapis.com/token"),
-        "revocation_endpoint": "https://oauth2.googleapis.com/revoke",
-        "scopes_supported": [
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/gmail.readonly",
-            "https://www.googleapis.com/auth/calendar.readonly"
-        ]
-    }
+@app.get("/oauth/authorize")
+async def oauth_authorize(session_id: str = None):
+    """Initiate OAuth flow"""
+    try:
+        if not session_id:
+            session_id = session_manager.create_session()
+        
+        client_id = os.getenv('GOOGLE_CLIENT_ID')
+        redirect_uri = os.getenv('OAUTH_REDIRECT_URI')
+        scopes = [s.strip() for s in os.getenv('OAUTH_SCOPES', '').split(',') if s.strip()]
+        
+        logger.info(f"Initiating OAuth: client_id={client_id}, redirect_uri={redirect_uri}, scopes={scopes}")
+        
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": os.getenv('GOOGLE_CLIENT_SECRET'),
+                    "auth_uri": os.getenv('OAUTH_AUTH_ENDPOINT'),
+                    "token_uri": os.getenv('OAUTH_TOKEN_ENDPOINT'),
+                    "redirect_uris": [redirect_uri]
+                }
+            },
+            scopes=scopes
+        )
+        flow.redirect_uri = redirect_uri
+        
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'
+        )
+        
+        logger.info(f"Generated authorization_url: {authorization_url}")
+        session_manager.update_session(session_id, oauth_state=state)
+        return RedirectResponse(url=authorization_url)
+        
+    except Exception as e:
+        logger.error(f"OAuth error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============================================================================
-# CORS Proxy for OAuth
-# ============================================================================
-
-@app.get("/auth/discovery/authorization-server/{server}")
-async def oauth_proxy_discovery(server: str):
-    """CORS proxy for OAuth discovery"""
-    return await oauth_discovery()
-
-
-@app.post("/oauth2/token")
-async def oauth_proxy_token(request: Request):
-    """CORS proxy for token exchange"""
-    body = await request.json()
-    # Placeholder - implement actual token exchange
-    return {
-        "access_token": "token_" + secrets.token_urlsafe(32),
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "refresh_token": "refresh_" + secrets.token_urlsafe(32)
-    }
+@app.get("/oauth/callback")
+async def oauth_callback(code: str = None, state: str = None, error: str = None, session_id: str = None):
+    """Handle OAuth callback"""
+    try:
+        if error:
+            raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
+        
+        client_id = os.getenv('GOOGLE_CLIENT_ID')
+        client_secret = os.getenv('GOOGLE_CLIENT_SECRET')
+        redirect_uri = os.getenv('OAUTH_REDIRECT_URI')
+        
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": os.getenv('OAUTH_AUTH_ENDPOINT'),
+                    "token_uri": os.getenv('OAUTH_TOKEN_ENDPOINT'),
+                    "redirect_uris": [redirect_uri]
+                }
+            },
+            scopes=os.getenv('OAUTH_SCOPES', '').split(','),
+            state=state
+        )
+        flow.redirect_uri = redirect_uri
+        flow.fetch_token(code=code)
+        
+        credentials = flow.credentials
+        tokens = {
+            'access_token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_expiry': credentials.expiry.isoformat() if credentials.expiry else None,
+            'scopes': credentials.scopes
+        }
+        
+        if not session_id:
+            session_id = session_manager.create_session()
+        
+        session_manager.store_oauth_tokens(session_id, tokens)
+        
+        return {
+            "status": "success",
+            "message": "Authentication successful. You can now use the tools.",
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================
@@ -298,24 +458,19 @@ async def mcp_post(
     mcp_session_id: Optional[str] = Header(None),
     mcp_protocol_version: Optional[str] = Header("2025-03")
 ):
-    """
-    POST endpoint for MCP Streamable HTTP
-    Handles initialization, tool calls, and request-response patterns
-    """
-    # Validate Origin header for DNS rebinding protection
-    origin = request.headers.get("origin")
-    if origin and origin not in ["http://localhost:3000", "http://127.0.0.1:3000"]:
-        raise HTTPException(status_code=403, detail="Origin not allowed")
+    """POST endpoint for MCP Streamable HTTP"""
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
     
-    body = await request.json()
     method = body.get("method")
     
-    # Handle initialization
     if method == "initialize":
         session_id = session_manager.create_session(
-            client_name=body.get("params", {}).get("clientName")
+            client_name=body.get("params", {}).get("clientInfo", {}).get("name")
         )
-        session = session_manager.update_session(session_id, initialized=True)
+        session_manager.update_session(session_id, initialized=True)
         
         return JSONResponse({
             "jsonrpc": "2.0",
@@ -323,7 +478,14 @@ async def mcp_post(
             "result": {
                 "protocolVersion": "2025-03",
                 "capabilities": {
-                    "tools": {},
+                    "tools": {
+                        "list_calendars": {},
+                        "get_events": {},
+                        "search_drive_files": {},
+                        "get_drive_file_content": {},
+                        "search_gmail_messages": {},
+                        "gmail_create_draft": {}
+                    },
                     "resources": {},
                     "prompts": {}
                 },
@@ -334,7 +496,6 @@ async def mcp_post(
             }
         }, headers={"Mcp-Session-Id": session_id})
     
-    # Validate session for subsequent requests
     if not mcp_session_id:
         raise HTTPException(status_code=400, detail="Mcp-Session-Id header required")
     
@@ -342,32 +503,46 @@ async def mcp_post(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    # Handle tool calls
     if method == "tools/call":
         tool_name = body.get("params", {}).get("name")
         arguments = body.get("params", {}).get("arguments", {})
         
+        # Add session_id to arguments for auth
+        arguments["session_id"] = mcp_session_id
+        
         try:
-            # Route to appropriate tool
-            if tool_name == "search_drive_files":
-                result = await workspace_tools.search_drive_files(**arguments)
-            elif tool_name == "search_gmail_messages":
-                result = await workspace_tools.search_gmail_messages(**arguments)
-            elif tool_name == "list_calendars":
-                result = await workspace_tools.list_calendars(**arguments)
-            elif tool_name == "get_events":
-                result = await workspace_tools.get_events(**arguments)
+            if hasattr(workspace_tools, tool_name):
+                tool_func = getattr(workspace_tools, tool_name)
+                result = await tool_func(**arguments)
+                
+                # Check for auth required
+                if isinstance(result, dict) and result.get("error") == "Authentication required":
+                    redirect_uri = os.getenv('OAUTH_REDIRECT_URI', '')
+                    auth_url = result.get('auth_url', f"{redirect_uri.replace('/callback', '/authorize')}?session_id={mcp_session_id}")
+                    return JSONResponse({
+                        "jsonrpc": "2.0",
+                        "id": body.get("id"),
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text", 
+                                    "text": f"⚠️ Authentication Required. Please visit this link to authorize: {auth_url}"
+                                }
+                            ],
+                            "isError": True
+                        }
+                    })
+
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": body.get("id"),
+                    "result": {
+                        "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                        "isError": False
+                    }
+                })
             else:
                 raise ValueError(f"Unknown tool: {tool_name}")
-            
-            return JSONResponse({
-                "jsonrpc": "2.0",
-                "id": body.get("id"),
-                "result": {
-                    "content": [{"type": "text", "text": json.dumps(result)}],
-                    "isError": False
-                }
-            })
         except Exception as e:
             logger.error(f"Tool call error: {e}")
             return JSONResponse({
@@ -376,7 +551,6 @@ async def mcp_post(
                 "error": {"code": -32603, "message": str(e)}
             }, status_code=500)
     
-    # Handle other methods
     return JSONResponse({
         "jsonrpc": "2.0",
         "id": body.get("id"),
