@@ -58,6 +58,16 @@ To use this server with Claude Desktop, add the following to your `claude_deskto
 
 > **Note**: For the Cloud Run deployment, simply use the `url` transport as shown above.
 
+### Client Integration (Cursor)
+
+1.  Open **Cursor Settings** (Ctrl+Shift+J or Cmd+Shift+J).
+2.  Navigate to **Generative AI** > **MCP Servers** (or just **MCP** in newer versions).
+3.  Click **+ Add New MCP Server**.
+4.  Select **Type**: `SSE` (Server-Sent Events).
+5.  **Name**: `google-workspace`
+6.  **URL**: `https://google-workspace-mcp-server-554655392699.us-central1.run.app/mcp`
+7.  Click **Save**.
+
 ### 2. Backend Setup
 
 ```bash
