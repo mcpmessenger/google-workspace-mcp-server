@@ -19,9 +19,14 @@ SERVER_START_TIME = datetime.utcnow()
 # Required for Google OAuth when scopes are automatically expanded by Google
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
-from fastapi import FastAPI, Request, Response, HTTPException, Header
-from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse
-from fastapi.middleware.cors import CORSMiddleware
+try:
+    from fastapi import FastAPI, Request, Response, HTTPException, Depends, Security, Header, Query
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+except ImportError as e:
+    print(f"CRITICAL: FastAPI or related dependencies not found: {e}", flush=True)
+    sys.exit(1) # Exit if core dependencies are missing
+
 from contextlib import asynccontextmanager
 import uvicorn
 
@@ -116,6 +121,7 @@ class SessionManager:
             self.db = firestore.Client()
             self.collection = self.db.collection(collection_name)
             self.session_timeout = timedelta(hours=24)
+            self.sessions = {} # L1 Cache
             logger.info(f"FirestoreSessionManager initialized with collection: {collection_name}")
         except Exception as e:
             logger.error(f"Failed to initialize Firestore client: {e}")
@@ -150,33 +156,58 @@ class SessionManager:
             data['last_activity'] = data['last_activity'].isoformat() if isinstance(data['last_activity'], datetime) else data['last_activity']
         return data
 
-    def create_session(self, client_name: Optional[str] = None) -> str:
-        """Create a new session stored in Firestore"""
+    def create_session(self, client_name: Optional[str] = None) -> tuple[str, SessionState]:
+        """Create a new session stored in Firestore and return (session_id, state)"""
         session_id = secrets.token_urlsafe(32)
-        session = SessionState(
+        new_session = SessionState(
             session_id=session_id,
             client_name=client_name,
             created_at=datetime.utcnow(),
             last_activity=datetime.utcnow()
         )
         
+        # Create in Firestore
         if self.db:
             try:
-                self.collection.document(session_id).set(self._state_to_dict(session))
+                self.collection.document(session_id).set(self._state_to_dict(new_session))
                 logger.info(f"Session created and saved to Firestore: {session_id}")
             except Exception as e:
-                logger.error(f"Error saving new session to Firestore: {e}")
-        else:
-            self.sessions[session_id] = session
-            logger.info(f"Session created in-memory: {session_id}")
+                logger.error(f"Error creating session in Firestore: {e}")
+                # If Firestore fails, we still want to create an in-memory session
+                # but log the error and proceed with in-memory only.
+                self.db = None # Disable Firestore for this session manager instance
+                logger.warning("Firestore write failed, falling back to in-memory for this session.")
+        
+        # Add to L1 Cache (always)
+        self.sessions[session_id] = new_session
+        logger.info(f"Session created in-memory: {session_id}")
             
-        return session_id
+        return session_id, new_session
 
     def get_session(self, session_id: str) -> Optional[SessionState]:
-        """Retrieve session from Firestore by ID"""
+        """Retrieve session from cache or Firestore with strict verification"""
         if not session_id:
             return None
             
+        # 1. Check L1 Cache
+        if session_id in self.sessions:
+            session = self.sessions[session_id]
+            # Check expiration
+            if datetime.utcnow() - session.last_activity < self.session_timeout:
+                # Update last activity in cache
+                session.last_activity = datetime.utcnow()
+                # If Firestore is active, also update there (throttled/batched ideally, but direct for reliability now)
+                if self.db:
+                    try:
+                        self.collection.document(session_id).update({'last_activity': session.last_activity.isoformat()})
+                    except Exception as e:
+                        logger.error(f"Error updating last_activity in Firestore for session {session_id}: {e}")
+                return session
+            else:
+                logger.info(f"Session expired in L1 cache: {session_id}")
+                del self.sessions[session_id] # Remove expired session from cache
+
+        # 2. Check Firestore (if enabled)
         if self.db:
             try:
                 doc = self.collection.document(session_id).get()
@@ -186,31 +217,38 @@ class SessionManager:
                         # Check expiration
                         if datetime.utcnow() - session.last_activity > self.session_timeout:
                             logger.info(f"Session expired according to Firestore timestamp: {session_id}")
-                            self.delete_session(session_id)
+                            self.delete_session(session_id) # Delete from Firestore and cache
                             return None
                         
-                        # Update last activity (throttled/batched ideally, but direct for reliability now)
+                        # Update L1 Cache
+                        self.sessions[session_id] = session
+                        
+                        # Update last activity in Firestore
                         session.last_activity = datetime.utcnow()
                         self.collection.document(session_id).update({'last_activity': session.last_activity.isoformat()})
                         return session
                 return None
             except Exception as e:
                 logger.error(f"Error retrieving session from Firestore: {e}")
-                return None
-        else:
-            session = self.sessions.get(session_id)
-            if session:
-                if datetime.utcnow() - session.last_activity > self.session_timeout:
-                    del self.sessions[session_id]
-                    return None
-                session.last_activity = datetime.utcnow()
-            return session
+                # If Firestore read fails, disable Firestore for this instance
+                self.db = None
+                logger.warning("Firestore read failed, falling back to in-memory only.")
+                return None # No session found or error
+        return None # Not found in cache, and Firestore not enabled or failed
 
     def delete_session(self, session_id: str) -> bool:
-        """Delete session from Firestore"""
+        """Delete session from Firestore and L1 cache"""
+        # Always remove from L1 Cache first
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            logger.info(f"Session deleted from L1 cache: {session_id}")
+            
         if self.db:
             try:
                 self.collection.document(session_id).delete()
+                # Clear L1 Cache
+                if session_id in self.sessions:
+                    del self.sessions[session_id]
                 return True
             except Exception as e:
                 logger.error(f"Error deleting session from Firestore: {e}")
@@ -233,6 +271,8 @@ class SessionManager:
                 try:
                     # Partial update in Firestore for efficiency
                     update_data = {}
+                    # Always ensure session_id is in the document for validation
+                    update_data['session_id'] = session_id
                     for key, value in kwargs.items():
                         if key == 'last_activity' and isinstance(value, datetime):
                             update_data[key] = value.isoformat()
@@ -241,12 +281,16 @@ class SessionManager:
                     self.collection.document(session_id).update(update_data)
                 except Exception as e:
                     logger.error(f"Error updating session in Firestore: {e}")
+            
+            # Update L1 Cache
+            self.sessions[session_id] = session
             return session
         return None
 
-    def store_oauth_tokens(self, session_id: str, tokens: dict) -> bool:
-        """Store OAuth tokens for a session in Firestore"""
-        return self.update_session(session_id, oauth_tokens=tokens, last_activity=datetime.utcnow()) is not None
+    def store_oauth_tokens(self, session_id: str, tokens: dict):
+        """Update session with OAuth tokens"""
+        # Ensure session_id is written to the document to satisfy Pydantic validation on read
+        self.update_session(session_id, oauth_tokens=tokens, initialized=True)
 
     def get_oauth_tokens(self, session_id: str) -> Optional[dict]:
         """Retrieve OAuth tokens from Firestore session"""
@@ -341,12 +385,22 @@ class GoogleWorkspaceTools:
             
         session = session_manager.get_session(session_id)
         env_cid, env_csec = get_google_credentials()
+        
+        # Extract client credentials from session or environment
+        client_id = (session.oauth_client_id if session else None) or env_cid
+        client_secret = (session.oauth_client_secret if session else None) or env_csec
+        
+        # Google's standard OAuth token endpoint
+        token_uri = "https://oauth2.googleapis.com/token"
+        
+        logger.info(f"🔑 Building credentials for session {session_id[:8]}... client_id={'SET' if client_id else 'MISSING'}, client_secret={'SET' if client_secret else 'MISSING'}, refresh_token={'SET' if tokens.get('refresh_token') else 'MISSING'}")
+        
         creds = Credentials(
             token=tokens.get('access_token'),
             refresh_token=tokens.get('refresh_token'),
-            token_uri=os.getenv('OAUTH_TOKEN_ENDPOINT'),
-            client_id=(session.oauth_client_id if session else None) or env_cid,
-            client_secret=(session.oauth_client_secret if session else None) or env_csec,
+            token_uri=token_uri,
+            client_id=client_id,
+            client_secret=client_secret,
             scopes=tokens.get('scopes')
         )
         
@@ -540,7 +594,7 @@ async def oauth_authorize(session_id: str = None, client_id: str = None, client_
     """Initiate OAuth flow"""
     try:
         if not session_id:
-            session_id = session_manager.create_session()
+            session_id, _ = session_manager.create_session()
         
         # Favor query params, then session storage, then env vars
         cid = client_id
@@ -691,11 +745,35 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None,
             'scopes': getattr(credentials, 'scopes', scopes)
         }
         
-        if not session_id:
-            session_id = session_manager.create_session()
         
+        if not session_id:
+            session_id, _ = session_manager.create_session()
+        
+        # Store OAuth tokens
         session_manager.store_oauth_tokens(session_id, tokens)
-        logger.info(f"Authentication successful for session: {session_id} (Saved to Firestore)")
+        
+        # CRITICAL: Also store client credentials for future token refresh
+        session_manager.update_session(
+            session_id,
+            oauth_client_id=client_id,
+            oauth_client_secret=client_secret
+        )
+        
+        # Fetch user profile from Google
+        user_info = {}
+        try:
+            import requests
+            userinfo_response = requests.get(
+                'https://www.googleapis.com/oauth2/v2/userinfo',
+                headers={'Authorization': f'Bearer {credentials.token}'}
+            )
+            if userinfo_response.status_code == 200:
+                user_info = userinfo_response.json()
+                logger.info(f"📧 Fetched user profile: {user_info.get('email', 'N/A')}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch user profile: {e}")
+        
+        logger.info(f"✅ Authentication successful for session: {session_id} (Tokens + Credentials saved to Firestore)")
         
         # Return a premium success page
         html_content = f"""
@@ -852,7 +930,8 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None,
                         type: 'oauth_success',
                         session_id: '{session_id}',
                         service: 'google-workspace',
-                        tokens: {json.dumps(tokens)}
+                        tokens: {json.dumps(tokens)},
+                        user: {json.dumps(user_info)}
                     }}, '*');
                 }}
             </script>
@@ -969,170 +1048,208 @@ TOOLS_SCHEMA = [
 @app.post("/mcp")
 async def mcp_post(
     request: Request,
-    session_id: Optional[str] = Header(None, alias="X-Session-ID"),
     x_mcp_session_id: Optional[str] = Header(None, alias="X-Mcp-Session-Id"),
-    x_google_client_id: Optional[str] = Header(None, alias="X-Google-Client-Id"),
-    x_google_client_secret: Optional[str] = Header(None, alias="X-Google-Client-Secret"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    q_session_id: Optional[str] = Query(None, alias="session_id"),
+    
     x_google_access_token: Optional[str] = Header(None, alias="X-Google-Access-Token"),
-    x_google_refresh_token: Optional[str] = Header(None, alias="X-Google-Refresh-Token")
+    x_google_access_token_lower: Optional[str] = Header(None, alias="x-google-access-token"),
+    q_access_token: Optional[str] = Query(None, alias="access_token"),
+    
+    x_google_refresh_token: Optional[str] = Header(None, alias="X-Google-Refresh-Token"),
+    x_google_refresh_token_lower: Optional[str] = Header(None, alias="x-google-refresh-token"),
+    q_refresh_token: Optional[str] = Query(None, alias="refresh_token"),
+    
+    authorization: Optional[str] = Header(None),
+    
+    x_google_client_id: Optional[str] = Header(None, alias="X-Google-Client-Id"),
+    x_google_client_secret: Optional[str] = Header(None, alias="X-Google-Client-Secret")
 ):
     """MCP HTTP transport root - handles POST as JSON-RPC"""
     try:
-        body = await request.json()
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-    
-    method = body.get("method")
-    
-    # Extract session ID from headers or body
-    config = body.get("config", {})
-    relay_headers = config.get("headers", {})
-    session_id = (
-        session_id or 
-        x_mcp_session_id or 
-        body.get("params", {}).get("session_id") or 
-        relay_headers.get("X-Session-ID") or 
-        relay_headers.get("x-session-id")
-    )
-    session = session_manager.get_session(session_id)
-    
-    if not session:
-        # Create a new session if missing or expired
-        session_id = session_manager.create_session(client_name="mcp-client")
-        session_manager.update_session(session_id, initialized=True)
-        session = session_manager.get_session(session_id)
-        logger.info(f"Using new/recreated session: {session_id}")
-    
-    # Trace OAuth token state for the session
-    has_tokens = bool(session.oauth_tokens)
-    logger.info(f"Session {session_id} state - has_tokens: {has_tokens}, initialized: {session.initialized}")
-    
-    # Update session with relayed Google credentials from various sources
-    # 1. From direct headers
-    cid = x_google_client_id
-    cs = x_google_client_secret
-    
-    # 2. From config in body (standard for our frontend)
-    config = body.get("config", {})
-    if not cid:
-        cid = config.get("oauthClientId")
-    if not cs:
-        cs = config.get("oauthClientSecret")
-        
-    # 3. From headers embedded in config (another common relay pattern)
-    relay_headers = config.get("headers", {})
-    if not cid:
-        cid = relay_headers.get("X-Google-Client-Id") or relay_headers.get("x-google-client-id")
-    if not cs:
-        cs = relay_headers.get("X-Google-Client-Secret") or relay_headers.get("x-google-client-secret")
-
-    if cid or cs or x_google_access_token:
-        # Construct updated state
-        update_data = {}
-        if cid: update_data['oauth_client_id'] = cid
-        if cs: update_data['oauth_client_secret'] = cs
-        
-        # Hydrate tokens if relayed from client
-        if x_google_access_token:
-            # Important: Get fresh session data from Firestore before updating
-            current_session = session_manager.get_session(session_id)
-            current_tokens = (current_session.oauth_tokens if current_session else {}) or {}
-            
-            # Update with relayed tokens
-            current_tokens['access_token'] = x_google_access_token
-            if x_google_refresh_token:
-                current_tokens['refresh_token'] = x_google_refresh_token
-            update_data['oauth_tokens'] = current_tokens
-            
-        session_manager.update_session(session_id, **update_data)
-        logger.info(f"Updated Firestore session {session_id} with relayed credentials/tokens")
-
-    logger.info(f"Incoming MCP request: {method} for session: {session_id}")
-    
-    # Log headers (redacting sensitive ones)
-    headers_to_log = {k: v for k, v in request.headers.items() if k and k.lower() not in ['authorization', 'cookie', 'x-api-key', 'x-google-client-id', 'x-google-client-secret']}
-    logger.info(f"Headers: {json.dumps(headers_to_log)}")
-
-    if method == "initialize":
-        session_manager.update_session(session_id, initialized=True)
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": body.get("id"),
-            "result": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {"listChanged": True}
-                },
-                "serverInfo": {
-                    "name": "Google Workspace MCP Server",
-                    "version": "0.1.0"
-                }
-            }
-        }, headers={"Mcp-Session-Id": session_id})
-    
-    if method in ["tools/list", "list_tools"]:
-        logger.info(f"Returning {len(TOOLS_SCHEMA)} tools")
-        return JSONResponse({
-            "jsonrpc": "2.0",
-            "id": body.get("id"),
-            "result": {
-                "tools": TOOLS_SCHEMA
-            }
-        })
-    
-    if method == "tools/call":
-        tool_name = body.get("params", {}).get("name")
-        arguments = body.get("params", {}).get("arguments", {})
-        
-        # Add session_id to arguments for auth
-        arguments["session_id"] = session_id
-        
         try:
-            if hasattr(workspace_tools, tool_name):
-                tool_func = getattr(workspace_tools, tool_name)
-                result = await tool_func(**arguments)
+            body = await request.json()
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        
+        method = body.get("method")
+        
+        # 1. From direct headers (already extracted by FastAPI)
+        cid = x_google_client_id
+        cs = x_google_client_secret
+        
+        # 2. From config in body (standard for our frontend)
+        config = body.get("config", {})
+        if not cid: cid = config.get("oauthClientId")
+        if not cs: cs = config.get("oauthClientSecret")
+            
+        # 3. From headers embedded in config (another common relay pattern)
+        relay_headers = config.get("headers", {})
+        if not cid: cid = relay_headers.get("X-Google-Client-Id") or relay_headers.get("x-google-client-id")
+        if not cs: cs = relay_headers.get("X-Google-Client-Secret") or relay_headers.get("x-google-client-secret")
+        
+        # Coalesce headers and query params
+        # Session ID
+        session_id = None
+        if x_mcp_session_id: session_id = x_mcp_session_id
+        elif x_session_id: session_id = x_session_id
+        elif q_session_id: session_id = q_session_id
+        elif relay_headers.get("X-Session-ID"): session_id = relay_headers.get("X-Session-ID")
+        elif relay_headers.get("x-session-id"): session_id = relay_headers.get("x-session-id")
+        elif relay_headers.get("X-Mcp-Session-Id"): session_id = relay_headers.get("X-Mcp-Session-Id")
+        elif body.get("params", {}).get("session_id"): session_id = body.get("params", {}).get("session_id")
+
+        # Access Token
+        x_google_access_token = x_google_access_token or x_google_access_token_lower or q_access_token
+        if not x_google_access_token and authorization and authorization.startswith("Bearer "):
+            x_google_access_token = authorization.split(" ")[1]
+            
+        # Refresh Token
+        x_google_refresh_token = x_google_refresh_token or x_google_refresh_token_lower or q_refresh_token
+
+        session = session_manager.get_session(session_id)
+        
+        if not session:
+            # Create a new session if missing or expired
+            session_id, session = session_manager.create_session(client_name="mcp-client")
+            session.initialized = True
+            session_manager.update_session(session_id, initialized=True)
+            logger.info(f"Using new/recreated session: {session_id}")
+        
+        if not session:
+            raise ValueError(f"Failed to initialize session for ID: {session_id}")
+        
+        # (Credentials already extracted at top of function)
+
+        if cid or cs or x_google_access_token:
+            # Construct updated state
+            update_data = {}
+            if cid: update_data['oauth_client_id'] = cid
+            if cs: update_data['oauth_client_secret'] = cs
+            
+            # Hydrate tokens if relayed from client
+            if x_google_access_token:
+                logger.info(f"✨ RELAYED ACCESS TOKEN DETECTED for session: {session_id}")
+                # Important: Get fresh session data from Firestore before updating
+                current_session = session_manager.get_session(session_id)
+                current_tokens = (current_session.oauth_tokens if current_session else {}) or {}
                 
-                # Check for auth required
-                if isinstance(result, dict) and result.get("error") == "Authentication required":
-                    auth_response = workspace_tools.get_auth_error(session_id)
-                    auth_url = auth_response.get('auth_url')
+                # Update with relayed tokens
+                current_tokens['access_token'] = x_google_access_token
+                if x_google_refresh_token:
+                    current_tokens['refresh_token'] = x_google_refresh_token
+                update_data['oauth_tokens'] = current_tokens
+                
+            session_manager.update_session(session_id, **update_data)
+            logger.info(f"💾 Updated Firestore session {session_id} with relayed credentials/tokens")
+            
+            # CRITICAL: Manually update local session object to ensure immediate consistency
+            # We cannot rely on get_session() returning the updated data immediately due to Firestore consistency
+            if session:
+                for key, value in update_data.items():
+                    if hasattr(session, key):
+                        setattr(session, key, value)
+                logger.info("✅ Locally hydrated session with relayed tokens")
+
+        # Trace OAuth token state for the session
+        has_tokens = bool(session.oauth_tokens)
+        logger.info(f"📊 Session {session_id} state - has_tokens: {has_tokens}, initialized: {session.initialized}")
+
+        logger.info(f"Incoming MCP request: {method} for session: {session_id}")
+        
+        # Log headers (redacting sensitive ones)
+        headers_to_log = {k: v for k, v in request.headers.items() if k and k.lower() not in ['authorization', 'cookie', 'x-api-key', 'x-google-client-id', 'x-google-client-secret']}
+        logger.info(f"Headers: {json.dumps(headers_to_log)}")
+
+        if method == "initialize":
+            session_manager.update_session(session_id, initialized=True)
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": body.get("id"),
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {"listChanged": True}
+                    },
+                    "serverInfo": {
+                        "name": "Google Workspace MCP Server",
+                        "version": "0.1.0"
+                    }
+                }
+            }, headers={"Mcp-Session-Id": session_id})
+        
+        if method in ["tools/list", "list_tools"]:
+            logger.info(f"Returning {len(TOOLS_SCHEMA)} tools")
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": body.get("id"),
+                "result": {
+                    "tools": TOOLS_SCHEMA
+                }
+            })
+        
+        if method == "tools/call":
+            tool_name = body.get("params", {}).get("name")
+            arguments = body.get("params", {}).get("arguments", {})
+            
+            # Add session_id to arguments for auth
+            arguments["session_id"] = session_id
+            
+            try:
+                if hasattr(workspace_tools, tool_name):
+                    tool_func = getattr(workspace_tools, tool_name)
+                    result = await tool_func(**arguments)
+                    
+                    # Check for auth required
+                    if isinstance(result, dict) and result.get("error") == "Authentication required":
+                        auth_response = workspace_tools.get_auth_error(session_id)
+                        auth_url = auth_response.get('auth_url')
+                        return JSONResponse({
+                            "jsonrpc": "2.0",
+                            "id": body.get("id"),
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text", 
+                                        "text": f"⚠️ Authentication Required. Link: {auth_url} DEBUG: Token={bool(x_google_access_token)}, LocalToken={bool(x_google_access_token_lower)}, Session={session_id[:8]}"
+                                    }
+                                ],
+                                "isError": True
+                            }
+                        })
+
                     return JSONResponse({
                         "jsonrpc": "2.0",
                         "id": body.get("id"),
                         "result": {
-                            "content": [
-                                {
-                                    "type": "text", 
-                                    "text": f"⚠️ Authentication Required. Please visit this link to authorize: {auth_url}"
-                                }
-                            ],
-                            "isError": True
+                            "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
+                            "isError": False
                         }
                     })
-
+                else:
+                    raise ValueError(f"Unknown tool: {tool_name}")
+            except Exception as e:
+                logger.error(f"Tool call error: {e}")
                 return JSONResponse({
                     "jsonrpc": "2.0",
                     "id": body.get("id"),
-                    "result": {
-                        "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
-                        "isError": False
-                    }
-                })
-            else:
-                raise ValueError(f"Unknown tool: {tool_name}")
-        except Exception as e:
-            logger.error(f"Tool call error: {e}")
-            return JSONResponse({
-                "jsonrpc": "2.0",
-                "id": body.get("id"),
-                "error": {"code": -32603, "message": str(e)}
-            }, status_code=500)
-    
-    return JSONResponse({
-        "jsonrpc": "2.0",
-        "id": body.get("id"),
-        "error": {"code": -32601, "message": "Method not found"}
-    }, status_code=400)
+                    "error": {"code": -32603, "message": str(e)}
+                }, status_code=500)
+        
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": body.get("id"),
+            "error": {"code": -32601, "message": "Method not found"}
+        }, status_code=400)
+
+    except Exception as e:
+        logger.error(f"FATAL ERROR in mcp_post: {e}")
+        logger.error(traceback.format_exc())
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": body.get("id") if 'body' in locals() else None,
+            "error": {"code": -32603, "message": f"Internal Server Error: {str(e)}"}
+        }, status_code=500)
 
 
 @app.get("/mcp")
